@@ -1,0 +1,212 @@
+#!/usr/bin/python
+
+# This software is distributed under the "Simplified BSD license":
+#
+# Copyright Michael Cook <michael@waxrat.com>. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#    1. Redistributions of source code must retain the above copyright notice,
+#       this list of conditions and the following disclaimer.
+#
+#    2. Redistributions in binary form must reproduce the above copyright
+#       notice, this list of conditions and the following disclaimer in the
+#       documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY MICHAEL COOK ''AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+# EVENT SHALL MICHAEL COOK OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+# INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# The views and conclusions contained in the software and documentation are
+# those of the authors and should not be interpreted as representing official
+# policies, either expressed or implied, of Michael Cook.
+
+#
+# In ~/.bashrc:
+#   cd () { local cmd; cmd="$(cd-history "$@")" || return; eval "$cmd"; }
+#   cdh () { cd-history --list | less -S +G "$@"; }
+#
+
+import sys, os, re
+this = os.path.basename(sys.argv.pop(0)) # this script's name
+
+max_history = 50
+home = os.environ["HOME"]
+history_file_name = os.path.join(home, "tmp", "cd_history")
+
+def shell_quote(s):
+    if not re.search(r'[^@%\w:,./=+-]', s):
+        return s
+    return "'" + re.sub(r"'", r"'\''", s) + "'"
+
+def load_history():
+    history = list()
+    try:
+        with open(history_file_name) as f:
+            i = 0
+            for line in f:
+                line = line.rstrip("\n")
+                if len(history) == max_history:
+                    history.pop(0)
+                # TODO: eventually remove support for old format (w/o "\t")
+                if "\t" in line:
+                    num, path = line.split("\t")
+                    num = int(num)
+                    i = num
+                else:
+                    i += 1
+                    num = i
+                    path = line
+                history.append((num, path))
+    except IOError as e:
+        if e.strerror != "No such file or directory":
+            raise
+    return history
+
+def save_history(history):
+    tmp = history_file_name + "." + str(os.getpid()) + "~"
+    with open(tmp, "w") as f:
+        for n, d in history:
+            if os.path.isdir(d):
+                f.write(str(n) + "\t" + d + "\n")
+    os.rename(tmp, history_file_name)
+
+def recent(history, n):
+    i = len(history) - n - 1
+    if i < 0 or i >= len(history):
+        sys.exit("No history entry " + str(n))
+    return history[i][1]
+
+def best_match(history, path):
+    if re.match(r'^-+$', path):
+        # Some number of dashes (e.g, "-", "--", "---", ... means use one of
+        # the last directories in the history.  If the very last directory is
+        # the same as the current working directory, then ignore it.  Then use
+        # the Nth from last directory in the history where N is the number of
+        # dashes.
+        return recent(history, len(path))
+
+    if re.match(r'^-\d+$', path):
+        # "-N" means use the Nth from the last directory in the history.
+        return recent(history, -int(path))
+
+    if re.match(r'^\d+$', path):
+        # "N" means use directory number N in the history.
+        i = int(path)
+        for n, d in history:
+            if i == n:
+                return d
+        sys.exit("No directory number %d in history" % i)
+
+    # "%foo" means the directory that ends with "foo".
+    # "%foo%" means the directory that contains "foo" anywhere.
+    # There must be exactly one match or else it's an error.
+    if path.startswith("%"):
+        base = path[1:].lower()
+        matches = list()
+        if path.endswith("%"):
+            base = base[0:-1]
+            matcher = lambda d: base in d
+        else:
+            matcher = lambda d: d.endswith(base)
+        for n, d in reversed(history):
+            if matcher(d.lower()):
+                matches.append((n, d))
+        if not matches:
+            sys.exit("No match: " + shell_quote(path))
+        if len(matches) != 1:
+            sys.exit("\n".join(["Multiple matches: " + shell_quote(path)] +
+                               map(lambda v: "%4d %s" % v,
+                                   reversed(matches))))
+        return matches[0][1]
+
+    # If path references an existing directory, use it.
+    if os.path.isdir(path):
+        return os.path.abspath(path)
+
+    sys.exit("No such directory: " + shell_quote(path))
+
+def find_dir(history, path):
+    i = 0
+    for n, d in history:
+        if d == path:
+            return i
+        i += 1
+    return -1
+
+#
+# Add the given directory to the history.  If the directory is already in the
+# history, move it to the end.  Make sure the history size doesn't exceed the
+# maximum.  Return true if the history argument is modified.
+#
+def append_dir(history, path):
+    i = find_dir(history, path)
+    if i == -1:
+        while len(history) >= max_history:
+            history.pop(0)
+        i = 0
+        for n, d in history:
+            if i < n:
+                i = n
+        i += 1
+    else:
+        if i + 1 == len(history):
+            return False
+        i, d = history.pop(i)
+    history.append((i, path))
+    return True
+
+def append_cwd(history):
+    # It's possible (if unlikely) that the current directory doesn't actually
+    # exist in the file system any more.  So catch and ignore.
+    try:
+        cwd = os.path.abspath(".")
+    except OSError as e:
+        if e.strerror != "No such file or directory":
+            raise
+        print >>sys.stderr, "%s: Can't determine current directory" % this
+        return False
+    return append_dir(history, cwd)
+
+def change_dir(history, path):
+    # Always store the current directory to the history before appending the
+    # new directory.
+    changed = False
+    if append_cwd(history):
+        changed = True
+    if append_dir(history, path):
+        changed = True
+    if changed:
+        save_history(history)
+    # Print the bash command to chdir to the selected directory.
+    print >>sys.stderr, history[-1][0], history[-1][1]
+    print "builtin", "cd", shell_quote(path)
+
+def show_history():
+    history = load_history()
+    if append_cwd(history):
+        save_history(history)
+    for n, d in history:
+        print "%4d %s" % (n, d)
+
+# ----------------------------------------------------------------------------
+
+if len(sys.argv) == 1 and sys.argv[0] == "--list":
+    show_history()
+elif len(sys.argv) == 1:
+    history = load_history()
+    path = best_match(history, sys.argv.pop(0))
+    change_dir(history, path)
+elif len(sys.argv) == 0:
+    change_dir(load_history(), home)
+else:
+    sys.exit("wrong number of arguments: " +
+             " ".join(map(shell_quote, sys.argv)))

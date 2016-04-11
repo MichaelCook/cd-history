@@ -8,8 +8,10 @@ visited.
 
 Add to your ~/.bashrc, for example:
 
-   cd () { local cmd; cmd="$(cd-history "$@")" || return; eval "$cmd"; }
-   cdh () { cd-history --list | less -S +G "$@"; }
+```
+cd () { local cmd; cmd="$(cd-history "$@")" || return; eval "$cmd"; }
+cdh () { cd-history --list | less -S +G "$@"; }
+```
 
 Then use "cd" as you would normally, plus:
 

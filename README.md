@@ -21,7 +21,7 @@ Then use "cd" as you would normally, plus:
 There must be exactly one match.  If there are more than one match, you'll be
 shown a list of the matches.
 
-* `cd %foo%` - change to a diretory containing "foo" anywhere in the pathname.
+* `cd %foo%` - change to a directory containing "foo" anywhere in the pathname.
 
 * `cd 4` - change to directory number 4.
 

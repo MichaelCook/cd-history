@@ -61,7 +61,8 @@ def load_history():
                     i += 1
                     num = i
                     path = line
-                history.append((num, path))
+                if os.path.isdir(path):
+                    history.append((num, path))
     except IOError as e:
         if e.strerror != "No such file or directory":
             raise
@@ -71,8 +72,7 @@ def save_history(history):
     tmp = history_file_name + "." + str(os.getpid()) + "~"
     with open(tmp, "w") as f:
         for n, d in history:
-            if os.path.isdir(d):
-                f.write(str(n) + "\t" + d + "\n")
+            f.write(str(n) + "\t" + d + "\n")
     os.rename(tmp, history_file_name)
 
 def recent(history, n):

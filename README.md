@@ -9,7 +9,7 @@ visited.
 Add to your ~/.bashrc, for example:
 
 ```
-cd () { local cmd; cmd="$(cd-history "$@")" || return; eval "$cmd"; }
+cd () { local cmd; cmd="$(cd-history "$@")" && eval "$cmd"; }
 cdh () { cd-history --list | less -S +G "$@"; }
 ```
 

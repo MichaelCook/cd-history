@@ -38,40 +38,36 @@ this = os.path.basename(sys.argv.pop(0)) # this script's name
 
 max_history = 50
 home = os.environ["HOME"]
-history_file_name = os.path.join(home, "tmp", "cd_history")
+history_file_name = os.path.join(home, "site", "cd_history")
 
 class history_entry:
-    def __init__(self, pathname, devino, num):
+    def __init__(self, pathname, num):
         self.pathname = pathname
-        self.devino = devino
         self.num = num
 
 history = list()
 
-def append_to_history(pathname, num=None, replace=True):
+def append_to_history(pathname, num=None):
+    """Append the given pathname to the history.
+       If already in the history, move it to the end.
+       Return true if any changes are made, false otherwise."""
     global history
-    try:
-        st = os.stat(pathname)
-    except OSError:
-        return False
-    if not S_ISDIR(st.st_mode):
-        return False
-    devino = st.st_dev, st.st_ino
 
     if num is None:
         num = 1
         for e in history:
-            if e.devino == devino:
-                if not replace:
-                    return False
+            if e.pathname == pathname:
                 num = e.num
                 break
             if num <= e.num:
                 num = e.num + 1
 
-    history = [e for e in history if e.devino != devino]
+    if history and history[-1].pathname == pathname:
+        return False;
+
+    history = [e for e in history if e.pathname != pathname]
     history = history[1-max_history:]
-    history.append(history_entry(pathname, devino, num))
+    history.append(history_entry(pathname, num))
     return True
 
 def shell_quote(s):
@@ -166,7 +162,7 @@ def append_cwd():
             raise
         print >>sys.stderr, "%s: Can't determine current directory" % this
         return False
-    return append_to_history(cwd, replace=False)
+    return append_to_history(cwd)
 
 def change_dir(pathname):
     # Always store the current directory to the history before appending the

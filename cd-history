@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
 
 # This software is distributed under the "Simplified BSD license":
 #
@@ -100,7 +100,7 @@ def save_history():
 def recent(n):
     i = len(history) - n - 1
     if i < 0 or i >= len(history):
-        sys.exit("No history entry " + str(n))
+        sys.exit("{}: No history entry {}".format(this, n))
     return history[i].pathname
 
 def best_match(pathname):
@@ -122,7 +122,7 @@ def best_match(pathname):
         for e in history:
             if num == e.num:
                 return e.pathname
-        sys.exit("No directory number %d in history" % num)
+        sys.exit("{}: No directory number {} in history".format(this, num))
 
     # "%foo" means the directory that ends with "foo".
     # "%foo%" means the directory that contains "foo" anywhere.
@@ -139,7 +139,7 @@ def best_match(pathname):
             if matcher(e.pathname.lower()):
                 matches.append((e.num, e.pathname))
         if not matches:
-            sys.exit("No match: " + shell_quote(pathname))
+            sys.exit("{}: No match: {}".format(this,  shell_quote(pathname)))
         if len(matches) != 1:
             sys.exit("\n".join(["Multiple matches: " + shell_quote(pathname)] +
                                map(lambda v: "%4d %s" % v,
@@ -150,7 +150,7 @@ def best_match(pathname):
     if os.path.isdir(pathname):
         return os.path.abspath(pathname)
 
-    sys.exit("No such directory: " + shell_quote(pathname))
+    sys.exit("{}: No such directory: {}".format(this, shell_quote(pathname)))
 
 def append_cwd():
     # It's possible (if unlikely) that the current directory doesn't actually
@@ -198,5 +198,5 @@ elif len(sys.argv) == 0:
     load_history()
     change_dir(home)
 else:
-    sys.exit("wrong number of arguments: " +
-             " ".join(map(shell_quote, sys.argv)))
+    sys.exit("{}: Wrong number of arguments: {}" \
+                 .format(this, " ".join(map(shell_quote, sys.argv))))

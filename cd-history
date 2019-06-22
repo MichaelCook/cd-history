@@ -41,20 +41,47 @@ if debug:
     def debug(*args):
         print >>sys.stderr, ">", " ".join(map(lambda a: str(a), args))
 
-max_history = 50
+max_history = 100
 home = os.environ["HOME"]
 history_file_name = os.path.join(home, "site", "cd_history")
 
+_cwd = None
+
+def get_cwd():
+    global _cwd
+    if _cwd is None:
+        # The current directory may not actually exist in
+        # the file system any more.
+        try:
+            _cwd = os.path.abspath(".")
+        except OSError as e:
+            if e.strerror != "No such file or directory":
+                raise
+            _cwd = False
+    return _cwd
+
+_devino = {}
+
 def get_devino(pathname):
+    devino = _devino.get(pathname, False)
+    if devino is not False:
+        return devino
+    devino = None
     try:
         st = os.stat(pathname)
+        if S_ISDIR(st.st_mode):
+            devino = "{},{}".format(st.st_dev, st.st_ino)
+        else:
+            print >>sys.stderr, "{}: {} - Not a directory".format(this, pathname)
     except OSError, ex:
         print >>sys.stderr, "{}: {} - {}".format(this, pathname, ex.strerror)
-        return None
-    if not S_ISDIR(st.st_mode):
-        print >>sys.stderr, "{}: {} - Not a directory".format(this, pathname)
-        return None
-    return "{},{}".format(st.st_dev, st.st_ino)
+    _devino[pathname] = devino
+    return devino
+
+def is_same_dir(here, there):
+    if there is None:
+        return False
+    return get_devino(here) == get_devino(there)
 
 class history_entry:
     def __init__(self, pathname, num, devino):
@@ -182,10 +209,18 @@ def best_match(pathname):
                 matches.append((e.num, e.pathname))
         if not matches:
             sys.exit("{}: No match: {}".format(this,  shell_quote(pathname)))
-        if len(matches) != 1:
-            sys.exit("\n".join(["Multiple matches: " + shell_quote(pathname)] +
-                               map(lambda v: "%4d %s" % v, reversed(matches))))
-        return matches[0][1]
+        best = matches.pop(0)
+
+        # If the first match is the current working directory, then use the
+        # second match (if there is one).
+        if matches and is_same_dir(best[1], get_cwd()):
+            best, matches[0] = matches[0], best
+
+        # If there are multiple matches, show the other matches (the dirs
+        # we're not going to change to).
+        for i in reversed(matches):
+            print >>sys.stderr, i[0], i[1]
+        return best[1]
 
     # If pathname references an existing directory, use it.
     if os.path.isdir(pathname):
@@ -194,13 +229,8 @@ def best_match(pathname):
     sys.exit("{}: No such directory: {}".format(this, shell_quote(pathname)))
 
 def append_cwd():
-    # It's possible (if unlikely) that the current directory doesn't actually
-    # exist in the file system any more.  So catch and ignore.
-    try:
-        cwd = os.path.abspath(".")
-    except OSError as e:
-        if e.strerror != "No such file or directory":
-            raise
+    cwd = get_cwd()
+    if not cwd:
         print >>sys.stderr, "{}: Can't determine current directory".format(this)
         return False
 

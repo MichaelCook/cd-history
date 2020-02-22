@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 
 # This software is distributed under the "Simplified BSD license":
 #
@@ -31,19 +31,22 @@
 #   cdh () { cd-history --list | less -S +G "$@"; }
 #
 
-import sys, os, re
+import sys
+import os
+import re
 from stat import *
 
-this = os.path.basename(sys.argv.pop(0)) # this script's name
+this_script = os.path.basename(sys.argv.pop(0)) # this script's name
 
 debug = False # True to enable debug logging
 if debug:
     def debug(*args):
-        print >>sys.stderr, ">", " ".join(map(lambda a: str(a), args))
+        print('>', ' '.join(map(lambda a: str(a), args)),
+              file=sys.stderr)
 
 max_history = 100
-home = os.environ["HOME"]
-history_file_name = os.path.join(home, "site", "cd_history")
+home = os.environ['HOME']
+history_file_name = os.path.join(home, 'site', 'cd_history')
 
 _cwd = None
 
@@ -53,9 +56,9 @@ def get_cwd():
         # The current directory may not actually exist in
         # the file system any more.
         try:
-            _cwd = os.path.abspath(".")
+            _cwd = os.path.abspath('.')
         except OSError as e:
-            if e.strerror != "No such file or directory":
+            if e.strerror != 'No such file or directory':
                 raise
             _cwd = False
     return _cwd
@@ -70,11 +73,13 @@ def get_devino(pathname):
     try:
         st = os.stat(pathname)
         if S_ISDIR(st.st_mode):
-            devino = "{},{}".format(st.st_dev, st.st_ino)
+            devino = '{},{}'.format(st.st_dev, st.st_ino)
         else:
-            print >>sys.stderr, "{}: {} - Not a directory".format(this, pathname)
-    except OSError, ex:
-        print >>sys.stderr, "{}: {} - {}".format(this, pathname, ex.strerror)
+            print('{}: {} - Not a directory'.format(this_script, pathname),
+                  file=sys.stderr)
+    except OSError as ex:
+        print('{}: {} - {}'.format(this_script, pathname, ex.strerror),
+              file=sys.stderr)
     _devino[pathname] = devino
     return devino
 
@@ -92,19 +97,23 @@ class history_entry:
 history = list()
 
 def append_to_history(pathname, num = None, devino = None):
-    """Append the given pathname to the history.
-       If already in the history, move it to the end.
-       Return true if any changes are made, false otherwise."""
+    """
+    Append the given pathname to the history.
+    If already in the history, move it to the end.
+    Return true if any changes are made, false otherwise.
+    """
     global history
 
-    if debug: debug("append_to_history({},{},{})".format(pathname, num, devino))
+    if debug:
+        debug('append_to_history({},{},{})'.format(pathname, num, devino))
 
     if devino is None:
         devino = get_devino(pathname)
         if devino is None:
-            print >>sys.stderr, "{}: Discarding {}".format(this, pathname)
+            print('{}: Discarding {}'.format(this_script, pathname),
+                  file=sys.stderr)
             return
-        if debug: debug("  devino", devino)
+        if debug: debug('  devino', devino)
 
     if num is None:
         num = 1
@@ -114,12 +123,12 @@ def append_to_history(pathname, num = None, devino = None):
                 break
             if num <= e.num:
                 num = e.num + 1
-        if debug: debug("  num", num)
+        if debug: debug('  num', num)
 
     if history:
         last = history[-1]
         if last.pathname == pathname and last.devino == devino:
-            if debug: debug("  already have", pathname, devino)
+            if debug: debug('  already have', pathname, devino)
             return False;
 
     history = [e for e in history
@@ -135,16 +144,16 @@ def shell_quote(s):
 
 def load_history():
     try:
-        with open(history_file_name) as f:
+        with open(history_file_name, 'rt') as f:
             lines = f.readlines()
     except IOError as e:
-        if e.strerror != "No such file or directory":
+        if e.strerror != 'No such file or directory':
             raise
         return
 
     for line in lines:
-        line = line.rstrip("\n")
-        fields = line.split("\t")
+        line = line.rstrip('\n')
+        fields = line.split('\t')
         if len(fields) == 2:
             num, pathname = fields
             devino = get_devino(pathname)
@@ -155,26 +164,29 @@ def load_history():
 
         num = int(num)
         append_to_history(pathname, num, devino)
-    if debug: debug("loaded")
+    if debug: debug('loaded')
 
 def save_history():
-    tmp = history_file_name + "." + str(os.getpid()) + "~"
-    with open(tmp, "w") as f:
+    tmp = history_file_name + '.' + str(os.getpid()) + '~'
+    with open(tmp, 'wt') as f:
         for e in history:
-            f.write("{}\t{}\t{}\n".format(e.num, e.devino, e.pathname))
+            print('{}\t{}\t{}'.format(e.num, e.devino, e.pathname),
+                  file=f)
     os.rename(tmp, history_file_name)
 
 def recent(n):
     i = len(history) - n - 1
     if i < 0 or i >= len(history):
-        sys.exit("{}: No history entry {}".format(this, n))
+        sys.exit('{}: No history entry {}'.format(this_script, n))
     return history[i].pathname
 
 def best_match(pathname):
-    """Get the absolute path of the directory that best matches PATHNAME."""
+    """
+    Get the absolute path of the directory that best matches PATHNAME.
+    """
 
     if re.match(r'^-+$', pathname):
-        # Some number of dashes (e.g, "-", "--", "---", ... means use one of
+        # Some number of dashes (e.g, '-', '--', '---', ... means use one of
         # the last directories in the history.  If the very last directory is
         # the same as the current working directory, then ignore it.  Then use
         # the Nth from last directory in the history where N is the number of
@@ -182,24 +194,24 @@ def best_match(pathname):
         return recent(len(pathname))
 
     if re.match(r'^-\d+$', pathname):
-        # "-N" means use the Nth from the last directory in the history.
+        # '-N' means use the Nth from the last directory in the history.
         return recent(-int(pathname))
 
     if re.match(r'^\d+$', pathname):
-        # "N" means use directory number N in the history.
+        # 'N' means use directory number N in the history.
         num = int(pathname)
         for e in history:
             if num == e.num:
                 return e.pathname
-        sys.exit("{}: No directory number {} in history".format(this, num))
+        sys.exit('{}: No directory number {} in history'.format(this_script, num))
 
-    # "%foo" means the directory that ends with "foo".
-    # "%foo%" means the directory that contains "foo" anywhere.
+    # '%foo' means the directory that ends with 'foo'.
+    # '%foo%' means the directory that contains 'foo' anywhere.
     # There must be exactly one match or else it's an error.
-    if pathname.startswith("%"):
+    if pathname.startswith('%'):
         base = pathname[1:].lower()
         matches = list()
-        if pathname.endswith("%"):
+        if pathname.endswith('%'):
             base = base[0:-1]
             matcher = lambda d: base in d
         else:
@@ -208,7 +220,7 @@ def best_match(pathname):
             if matcher(e.pathname.lower()):
                 matches.append((e.num, e.pathname))
         if not matches:
-            sys.exit("{}: No match: {}".format(this,  shell_quote(pathname)))
+            sys.exit('{}: No match: {}'.format(this_script,  shell_quote(pathname)))
         best = matches.pop(0)
 
         # If the first match is the current working directory, then use the
@@ -219,33 +231,35 @@ def best_match(pathname):
         # If there are multiple matches, show the other matches (the dirs
         # we're not going to change to).
         for i in reversed(matches):
-            print >>sys.stderr, i[0], i[1]
+            print(i[0], i[1], file=sys.stderr)
         return best[1]
 
     # If pathname references an existing directory, use it.
     if os.path.isdir(pathname):
         return os.path.abspath(pathname)
 
-    sys.exit("{}: No such directory: {}".format(this, shell_quote(pathname)))
+    sys.exit('{}: No such directory: {}'.format(this_script, shell_quote(pathname)))
 
 def append_cwd():
     cwd = get_cwd()
     if not cwd:
-        print >>sys.stderr, "{}: Can't determine current directory".format(this)
+        print('{}: Can\'t determine current directory'.format(this_script),
+              file=sys.stderr)
         return False
 
     devino = get_devino(cwd)
     if devino is None:
-        print >>sys.stderr, "{}: Can't determine current directory".format(this)
+        print('{}: Can\'t determine current directory'.format(this_script),
+              file=sys.stderr)
         return False
-    if debug: debug("cwd", cwd)
+    if debug: debug('cwd', cwd)
 
     # If cwd is already in history, use that pathname which might be a
     # different alias for what we determined with os.path.abspath.
     for e in history:
         if e.devino == devino:
             cwd = e.pathname
-            if debug: debug("cwd is already in history as", cwd)
+            if debug: debug('cwd is already in history as', cwd)
             break
 
     return append_to_history(cwd, devino=devino)
@@ -262,19 +276,19 @@ def change_dir(pathname):
         save_history()
     # Print the bash command to chdir to the selected directory.
     e = history[-1]
-    print >>sys.stderr, e.num, e.pathname
-    print "builtin", "cd", shell_quote(pathname)
+    print(e.num, e.pathname, file=sys.stderr)
+    print('builtin', 'cd', shell_quote(pathname))
 
 def show_history():
     load_history()
     if append_cwd():
         save_history()
     for e in history:
-        print "%4d %s" % (e.num, e.pathname)
+        print('{:4} {}'.format(e.num, e.pathname))
 
 # ----------------------------------------------------------------------------
 
-if len(sys.argv) == 1 and sys.argv[0] == "--list":
+if len(sys.argv) == 1 and sys.argv[0] == '--list':
     show_history()
 elif len(sys.argv) == 1:
     load_history()
@@ -284,5 +298,5 @@ elif len(sys.argv) == 0:
     load_history()
     change_dir(home)
 else:
-    sys.exit("{}: Wrong number of arguments: {}" \
-                 .format(this, " ".join(map(shell_quote, sys.argv))))
+    sys.exit('{}: Wrong number of arguments: {}'
+             .format(this_script, ' '.join(map(shell_quote, sys.argv))))

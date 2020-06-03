@@ -41,12 +41,12 @@ this_script = os.path.basename(sys.argv.pop(0)) # this script's name
 debug = False # True to enable debug logging
 if debug:
     def debug(*args):
-        print('>', ' '.join(map(lambda a: str(a), args)),
+        print('>', ' '.join([str(a) for a in args]),
               file=sys.stderr)
 
 max_history = 100
 home = os.environ['HOME']
-history_file_name = os.path.join(home, 'site', 'cd_history')
+history_file_name = os.path.join(home, '.local', 'cd_history')
 
 _cwd = None
 

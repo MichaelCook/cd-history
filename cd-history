@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # This software is distributed under the "Simplified BSD license":
 #
@@ -34,53 +34,50 @@
 import sys
 import os
 import re
-from stat import *
+from stat import S_ISDIR
 
-this_script = os.path.basename(sys.argv.pop(0)) # this script's name
+THIS_SCRIPT = os.path.basename(sys.argv.pop(0)) # this script's name
 
-debug = False # True to enable debug logging
-if debug:
+if os.environ.get('CD_HISTORY_DEBUG'):
     def debug(*args):
-        print('>', ' '.join([str(a) for a in args]),
-              file=sys.stderr)
+        print('>', *args, file=sys.stderr)
+else:
+    def debug(*_args):
+        pass
 
-max_history = 100
-home = os.environ['HOME']
-history_file_name = os.path.join(home, '.local', 'cd_history')
+MAX_HISTORY = 100
+HOME = os.environ['HOME']
+HISTORY_FILE_NAME = os.path.join(HOME, '.local', 'cd_history')
 
-_cwd = None
+CWD = None
 
 def get_cwd():
-    global _cwd
-    if _cwd is None:
+    global CWD
+    if CWD is None:
         # The current directory may not actually exist in
-        # the file system any more.
+        # the file system anymore.
         try:
-            _cwd = os.path.abspath('.')
-        except OSError as e:
-            if e.strerror != 'No such file or directory':
-                raise
-            _cwd = False
-    return _cwd
+            CWD = os.path.abspath('.')
+        except FileNotFoundError:
+            CWD = False
+    return CWD
 
-_devino = {}
+DEVINO = {}
 
 def get_devino(pathname):
-    devino = _devino.get(pathname, False)
+    devino = DEVINO.get(pathname, False)
     if devino is not False:
         return devino
     devino = None
     try:
         st = os.stat(pathname)
         if S_ISDIR(st.st_mode):
-            devino = '{},{}'.format(st.st_dev, st.st_ino)
+            devino = f'{st.st_dev},{st.st_ino}'
         else:
-            print('{}: {} - Not a directory'.format(this_script, pathname),
-                  file=sys.stderr)
+            print(f'{THIS_SCRIPT}: {pathname!r} - Not a directory', file=sys.stderr)
     except OSError as ex:
-        print('{}: {} - {}'.format(this_script, pathname, ex.strerror),
-              file=sys.stderr)
-    _devino[pathname] = devino
+        print(f'{THIS_SCRIPT}: {pathname!r} - {ex.strerror}', file=sys.stderr)
+    DEVINO[pathname] = devino
     return devino
 
 def is_same_dir(here, there):
@@ -94,47 +91,45 @@ class history_entry:
         self.num = num
         self.devino = devino
 
-history = list()
+HISTORY = []
 
-def append_to_history(pathname, num = None, devino = None):
+def append_to_history(pathname, num=None, devino=None):
     """
-    Append the given pathname to the history.
-    If already in the history, move it to the end.
+    Append the given pathname to the HISTORY.
+    If already in the HISTORY, move it to the end.
     Return true if any changes are made, false otherwise.
     """
-    global history
+    global HISTORY
 
-    if debug:
-        debug('append_to_history({},{},{})'.format(pathname, num, devino))
+    debug('append_to_history', pathname, num, devino)
 
     if devino is None:
         devino = get_devino(pathname)
         if devino is None:
-            print('{}: Discarding {}'.format(this_script, pathname),
-                  file=sys.stderr)
-            return
-        if debug: debug('  devino', devino)
+            print(f'{THIS_SCRIPT}: Discarding {pathname!r}', file=sys.stderr)
+            return False
+        debug('  devino', devino)
 
     if num is None:
         num = 1
-        for e in history:
+        for e in HISTORY:
             if e.pathname == pathname or e.devino == devino:
                 num = e.num
                 break
             if num <= e.num:
                 num = e.num + 1
-        if debug: debug('  num', num)
+        debug('  num', num)
 
-    if history:
-        last = history[-1]
+    if HISTORY:
+        last = HISTORY[-1]
         if last.pathname == pathname and last.devino == devino:
-            if debug: debug('  already have', pathname, devino)
-            return False;
+            debug('  already have', pathname, devino)
+            return False
 
-    history = [e for e in history
+    HISTORY = [e for e in HISTORY
                if e.pathname != pathname and e.devino != devino]
-    history = history[1-max_history:]
-    history.append(history_entry(pathname, num, devino))
+    HISTORY = HISTORY[1-MAX_HISTORY:]
+    HISTORY.append(history_entry(pathname, num, devino))
     return True
 
 def shell_quote(s):
@@ -144,11 +139,9 @@ def shell_quote(s):
 
 def load_history():
     try:
-        with open(history_file_name, 'rt') as f:
+        with open(HISTORY_FILE_NAME, 'rt') as f:
             lines = f.readlines()
-    except IOError as e:
-        if e.strerror != 'No such file or directory':
-            raise
+    except FileNotFoundError:
         return
 
     for line in lines:
@@ -164,21 +157,20 @@ def load_history():
 
         num = int(num)
         append_to_history(pathname, num, devino)
-    if debug: debug('loaded')
+    debug('loaded')
 
 def save_history():
-    tmp = history_file_name + '.' + str(os.getpid()) + '~'
-    with open(tmp, 'wt') as f:
-        for e in history:
-            print('{}\t{}\t{}'.format(e.num, e.devino, e.pathname),
-                  file=f)
-    os.rename(tmp, history_file_name)
+    tmp = f'{HISTORY_FILE_NAME}.{os.getpid()}~'
+    with open(tmp, 'wt') as fh:
+        for e in HISTORY:
+            print(f'{e.num}\t{e.devino}\t{e.pathname}', file=fh)
+    os.rename(tmp, HISTORY_FILE_NAME)
 
 def recent(n):
-    i = len(history) - n - 1
-    if i < 0 or i >= len(history):
-        sys.exit('{}: No history entry {}'.format(this_script, n))
-    return history[i].pathname
+    i = len(HISTORY) - n - 1
+    if i < 0 or i >= len(HISTORY):
+        sys.exit(f'{THIS_SCRIPT}: No HISTORY entry {n}')
+    return HISTORY[i].pathname
 
 def best_match(pathname):
     """
@@ -200,10 +192,10 @@ def best_match(pathname):
     if re.match(r'^\d+$', pathname):
         # 'N' means use directory number N in the history.
         num = int(pathname)
-        for e in history:
+        for e in HISTORY:
             if num == e.num:
                 return e.pathname
-        sys.exit('{}: No directory number {} in history'.format(this_script, num))
+        sys.exit(f'{THIS_SCRIPT}: No directory number {num} in history')
 
     # '%foo' means the directory that ends with 'foo'.
     # '%foo%' means the directory that contains 'foo' anywhere.
@@ -216,11 +208,11 @@ def best_match(pathname):
             matcher = lambda d: base in d
         else:
             matcher = lambda d: d.endswith(base)
-        for e in reversed(history):
+        for e in reversed(HISTORY):
             if matcher(e.pathname.lower()):
                 matches.append((e.num, e.pathname))
         if not matches:
-            sys.exit('{}: No match: {}'.format(this_script,  shell_quote(pathname)))
+            sys.exit(f'{THIS_SCRIPT}: No match: {pathname!r}')
         best = matches.pop(0)
 
         # If the first match is the current working directory, then use the
@@ -238,28 +230,28 @@ def best_match(pathname):
     if os.path.isdir(pathname):
         return os.path.abspath(pathname)
 
-    sys.exit('{}: No such directory: {}'.format(this_script, shell_quote(pathname)))
+    sys.exit(f'{THIS_SCRIPT}: No such directory: {pathname!r}')
 
 def append_cwd():
     cwd = get_cwd()
     if not cwd:
-        print('{}: Can\'t determine current directory'.format(this_script),
+        print(f'{THIS_SCRIPT}: Can\'t determine current directory',
               file=sys.stderr)
         return False
 
     devino = get_devino(cwd)
     if devino is None:
-        print('{}: Can\'t determine current directory'.format(this_script),
+        print(f'{THIS_SCRIPT}: Can\'t determine current directory',
               file=sys.stderr)
         return False
-    if debug: debug('cwd', cwd)
+    debug('cwd', cwd)
 
     # If cwd is already in history, use that pathname which might be a
     # different alias for what we determined with os.path.abspath.
-    for e in history:
+    for e in HISTORY:
         if e.devino == devino:
             cwd = e.pathname
-            if debug: debug('cwd is already in history as', cwd)
+            debug('cwd is already in history as', cwd)
             break
 
     return append_to_history(cwd, devino=devino)
@@ -275,7 +267,7 @@ def change_dir(pathname):
     if changed:
         save_history()
     # Print the bash command to chdir to the selected directory.
-    e = history[-1]
+    e = HISTORY[-1]
     print(e.num, e.pathname, file=sys.stderr)
     print('builtin', 'cd', shell_quote(pathname))
 
@@ -283,20 +275,22 @@ def show_history():
     load_history()
     if append_cwd():
         save_history()
-    for e in history:
-        print('{:4} {}'.format(e.num, e.pathname))
+    for e in HISTORY:
+        print(f'{e.num:4} {e.pathname}')
 
 # ----------------------------------------------------------------------------
 
-if len(sys.argv) == 1 and sys.argv[0] == '--list':
-    show_history()
-elif len(sys.argv) == 1:
-    load_history()
-    pathname = best_match(sys.argv.pop(0))
-    change_dir(pathname)
-elif len(sys.argv) == 0:
-    load_history()
-    change_dir(home)
-else:
-    sys.exit('{}: Wrong number of arguments: {}'
-             .format(this_script, ' '.join(map(shell_quote, sys.argv))))
+def main():
+    if len(sys.argv) == 1 and sys.argv[0] == '--list':
+        show_history()
+    elif len(sys.argv) == 1:
+        load_history()
+        pathname = best_match(sys.argv.pop(0))
+        change_dir(pathname)
+    elif len(sys.argv) == 0:
+        load_history()
+        change_dir(HOME)
+    else:
+        sys.exit(f'{THIS_SCRIPT}: Wrong number of arguments: {sys.argv:r}')
+
+main()

@@ -15,19 +15,18 @@ cdh () { cd-history --list | less -S +G "$@"; }
 
 Then use "cd" as you would normally, plus:
 
-* `cdh` - See the list of directories in your history.
+* `cdh` See the list of directories in your history
 
-* `cd %foo` - change to a directory in your history ending with "foo".
-There must be exactly one match.  If there are more than one match, you'll be
-shown a list of the matches.
+* `cd %foo` Change to a directory in your history ending with "foo".
+If there are multiple matches, switch to the most recent but show all matches
 
-* `cd %foo%` - change to a directory containing "foo" anywhere in the pathname.
+* `cd %foo%` Change to a directory containing "foo" anywhere in the pathname
 
-* `cd 4` - change to directory number 4.
+* `cd 4` Change to directory number 4
 
-* `cd -4` - change to the 4th directory from the bottom of the list.
+* `cd -4` Change to the 4th directory from the bottom of the list
 
-* `cd -` - same as `cd -1`.  Any number of dashes may be given to indicate how
-many directories back.  `cd ----` is the same as `cd -4`.
+* `cd -` Same as `cd -1`.  Any number of dashes may be given to indicate how
+many directories back.  `cd ----` is the same as `cd -4`
 
-* `cd` - change to $HOME.
+* `cd` Change to $HOME

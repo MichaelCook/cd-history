@@ -228,6 +228,10 @@ def best_match(pathname: str) -> str:
 
     # If pathname references an existing directory, use it.
     if os.path.isdir(pathname):
+        # The Cygwin build of Python will convert "c:/foo" to "/bar/c:/foo"
+        # which isn't right...
+        if pathname[1:3] == ':/':
+            pathname = f'/cygdrive/{pathname[0]}/{pathname[3:]}'
         return os.path.abspath(pathname)
 
     sys.exit(f'{THIS_SCRIPT}: No such directory: {pathname!r}')

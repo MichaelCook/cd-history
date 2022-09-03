@@ -31,12 +31,15 @@
 #   cdh () { cd-history --list | less -S +G "$@"; }
 #
 
+# pylint: disable=consider-alternative-union-syntax disable=deprecated-typing-alias
 import sys
 import os
 import re
+from typing import Optional, Union, Dict, List, Final, Any, NoReturn
+from collections.abc import Callable
 from stat import S_ISDIR
-from typing import Optional, Union, Dict, List, Final, Any, Callable
 from dataclasses import dataclass
+import click
 
 THIS_SCRIPT: Final = os.path.basename(sys.argv.pop(0))  # this script's name
 
@@ -44,7 +47,7 @@ if os.environ.get('CD_HISTORY_DEBUG'):
     def debug(*args: Any) -> None:
         print('>', *args, file=sys.stderr)
 else:
-    def debug(*args: Any) -> None:
+    def debug(*args: Any) -> None:  # pylint: disable=unused-argument
         pass
 
 MAX_HISTORY: Final = 100
@@ -53,13 +56,18 @@ HISTORY_FILE_NAME: Final = os.path.join(HOME, '.local', 'cd_history')
 
 CWD: Union[str, None, bool] = None
 
+ABSPATH = os.path.abspath
+
+def die(msg: str) -> NoReturn:
+    sys.exit(f'{THIS_SCRIPT}: {msg}')
+
 def get_cwd() -> Optional[str]:
     global CWD
     if CWD is None:
         # The current directory may not actually exist in
         # the file system anymore.
         try:
-            CWD = os.path.abspath('.')
+            CWD = ABSPATH('.')
         except OSError:
             CWD = False
     if isinstance(CWD, bool):
@@ -146,7 +154,7 @@ def shell_quote(arg: str) -> str:
 
 def load_history() -> None:
     try:
-        with open(HISTORY_FILE_NAME, 'rt') as f:
+        with open(HISTORY_FILE_NAME, 'rt', encoding='utf-8') as f:
             lines = f.readlines()
     except FileNotFoundError:
         return
@@ -161,7 +169,7 @@ def load_history() -> None:
 
 def save_history() -> None:
     tmp = f'{HISTORY_FILE_NAME}.{os.getpid()}~'
-    with open(tmp, 'wt') as fh:
+    with open(tmp, 'wt', encoding='utf-8') as fh:
         for e in HISTORY:
             print(f'{e.num}\t{e.devino}\t{e.pathname}', file=fh)
     os.rename(tmp, HISTORY_FILE_NAME)
@@ -169,7 +177,7 @@ def save_history() -> None:
 def recent(n: int) -> str:
     i = len(HISTORY) - n - 1
     if i < 0 or i >= len(HISTORY):
-        sys.exit(f'{THIS_SCRIPT}: No HISTORY entry {n}')
+        die(f'No HISTORY entry {n}')
     return HISTORY[i].pathname
 
 def best_match(pathname: str) -> str:
@@ -195,14 +203,15 @@ def best_match(pathname: str) -> str:
         for e in HISTORY:
             if num == e.num:
                 return e.pathname
-        sys.exit(f'{THIS_SCRIPT}: No directory number {num} in history')
+        die(f'No directory number {num} in history')
 
     # '%foo' means the directory that ends with 'foo'.
     # '%foo%' means the directory that contains 'foo' anywhere.
     # There must be exactly one match or else it's an error.
     if pathname.startswith('%'):
         base = pathname[1:].lower()
-        matches = list()
+        matches = []
+        # pylint: disable=unnecessary-lambda-assignment
         matcher: Callable[[str], bool]
         if pathname.endswith('%'):
             base = base[0:-1]
@@ -213,7 +222,7 @@ def best_match(pathname: str) -> str:
             if matcher(e.pathname.lower()):
                 matches.append((e.num, e.pathname))
         if not matches:
-            sys.exit(f'{THIS_SCRIPT}: No match: {pathname!r}')
+            die(f'No match: {pathname!r}')
         best = matches.pop(0)
 
         # If the first match is the current working directory, then use the
@@ -233,9 +242,9 @@ def best_match(pathname: str) -> str:
         # which isn't right...
         if pathname[1:3] == ':/':
             pathname = f'/cygdrive/{pathname[0]}/{pathname[3:]}'
-        return os.path.abspath(pathname)
+        return ABSPATH(pathname)
 
-    sys.exit(f'{THIS_SCRIPT}: No such directory: {pathname!r}')
+    die(f'No such directory: {pathname!r}')
 
 def append_cwd() -> bool:
     cwd = get_cwd()
@@ -252,7 +261,7 @@ def append_cwd() -> bool:
     debug('cwd', cwd)
 
     # If cwd is already in history, use that pathname which might be a
-    # different alias for what we determined with os.path.abspath.
+    # different alias for what we determined with ABSPATH.
     for e in HISTORY:
         if e.devino == devino:
             cwd = e.pathname
@@ -280,22 +289,30 @@ def show_history() -> None:
     load_history()
     if append_cwd():
         save_history()
+    print(f'{HISTORY_FILE_NAME}:')
     for e in HISTORY:
-        print(f'{e.num:4} {e.pathname}')
+        try:
+            os.listdir(e.pathname)
+            err = ''
+        except OSError as exc:
+            err = f' [{exc.strerror}]'
+        print(f'{"!" if err else " "}{e.num:3} {e.pathname}{err}')
 
-# ----------------------------------------------------------------------------
-
-def main() -> None:
-    if len(sys.argv) == 1 and sys.argv[0] == '--list':
+@click.command()
+@click.option('--list', '-l', 'do_list', is_flag=True, help="""
+Show the directory history
+""")
+@click.argument('directory', required=False)
+def main(do_list: bool = False,
+         directory: Optional[str] = None) -> None:
+    if do_list:
         show_history()
-    elif len(sys.argv) == 1:
-        load_history()
-        pathname = best_match(sys.argv.pop(0))
+        return
+    load_history()
+    if directory:
+        pathname = best_match(directory)
         change_dir(pathname)
-    elif len(sys.argv) == 0:
-        load_history()
-        change_dir(HOME)
     else:
-        sys.exit(f'{THIS_SCRIPT}: Wrong number of arguments: {sys.argv:r}')
+        change_dir(HOME)
 
 main()

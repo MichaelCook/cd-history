@@ -31,7 +31,7 @@
 #   cdh () { cd-history --list | less -S +G "$@"; }
 #
 
-# pylint: disable=consider-alternative-union-syntax disable=deprecated-typing-alias
+# pylint: disable=consider-alternative-union-syntax disable=deprecated-typing-alias # until python 3.10
 import sys
 import os
 import re
@@ -303,7 +303,7 @@ def show_history() -> None:
 Show the directory history
 """)
 @click.argument('directory', required=False)
-def main(do_list: bool = False,
+def main(do_list: bool,
          directory: Optional[str] = None) -> None:
     if do_list:
         show_history()
@@ -315,4 +315,4 @@ def main(do_list: bool = False,
     else:
         change_dir(HOME)
 
-main()
+main()                          # pylint: disable=no-value-for-parameter

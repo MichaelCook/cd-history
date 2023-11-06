@@ -31,15 +31,15 @@
 #   cdh () { cd-history --list | less -S +G "$@"; }
 #
 
-# pylint: disable=consider-alternative-union-syntax disable=deprecated-typing-alias # until python 3.10
+# pylint: disable=consider-alternative-union-syntax # until python 3.10
 import sys
 import os
 import re
-from typing import Optional, Union, Dict, List, Final, Any, NoReturn
+import argparse
+from typing import Optional, Union, Final, Any, NoReturn
 from collections.abc import Callable
 from stat import S_ISDIR
 from dataclasses import dataclass
-import click
 
 THIS_SCRIPT: Final = os.path.basename(sys.argv.pop(0))  # this script's name
 
@@ -74,7 +74,7 @@ def get_cwd() -> Optional[str]:
         return None
     return CWD
 
-DEVINO: Final[Dict[str, Optional[str]]] = {}
+DEVINO: Final[dict[str, Optional[str]]] = {}
 
 def get_devino(pathname: str) -> Optional[str]:
     devino = DEVINO.get(pathname, False)
@@ -104,7 +104,7 @@ class history_entry:
     num: int
     devino: str
 
-HISTORY: List[history_entry] = []
+HISTORY: list[history_entry] = []
 
 def append_to_history(pathname: str,
                       num: Optional[int] = None,
@@ -172,7 +172,7 @@ def save_history() -> None:
     with open(tmp, 'wt', encoding='utf-8') as fh:
         for e in HISTORY:
             print(f'{e.num}\t{e.devino}\t{e.pathname}', file=fh)
-    os.rename(tmp, HISTORY_FILE_NAME)
+    os.replace(tmp, HISTORY_FILE_NAME)
 
 def recent(n: int) -> str:
     i = len(HISTORY) - n - 1
@@ -215,9 +215,12 @@ def best_match(pathname: str) -> str:
         matcher: Callable[[str], bool]
         if pathname.endswith('%'):
             base = base[0:-1]
-            matcher = lambda d: base in d
+
+            def matcher(d: str) -> bool:
+                return base in d
         else:
-            matcher = lambda d: d.endswith(base)
+            def matcher(d: str) -> bool:
+                return d.endswith(base)
         for e in reversed(HISTORY):
             if matcher(e.pathname.lower()):
                 matches.append((e.num, e.pathname))
@@ -298,22 +301,26 @@ def show_history() -> None:
             err = f' [{exc.strerror}]'
         print(f'{"!" if err else " "}{e.num:3} {e.pathname}{err}')
 
-@click.command()
-@click.option('--list', '-l', 'do_list', is_flag=True, help="""
-Show the directory history
+def main() -> None:
+    parser = argparse.ArgumentParser(description="""
+Maintain a history of directories we've visited
 """)
-@click.argument('directory', required=False)
-def main(do_list: bool,
-         directory: Optional[str] = None) -> None:
-    if do_list:
+    parser.add_argument('--list', '-l', action='store_true',
+                        help='Show the directory history')
+    parser.add_argument('directory', nargs='?')
+    opts = parser.parse_args()
+
+    if opts.list:
         show_history()
         return
     load_history()
-    if directory:
-        pathname = best_match(directory)
-        change_dir(pathname)
+
+    pathname = opts.directory
+    if pathname:
+        pathname = best_match(pathname)
     else:
-        change_dir(HOME)
+        pathname = HOME
+    change_dir(pathname)
 
 if __name__ == '__main__':
-    main()                      # pylint: disable=no-value-for-parameter
+    main()
